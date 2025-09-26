@@ -62,7 +62,7 @@ jobs:
         if: ${{ inputs.language == 'node' }}
         working-directory: ${{ inputs.service }}
         run: |
-          npm ci
+          npm install
           npm run lint --if-present
           npm test --if-present
           npm audit --production
