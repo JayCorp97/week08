@@ -4,7 +4,7 @@ on:
   workflow_call:
     inputs:
       service:
-        description: "Target service (backend/product, backend/order, frontend)"
+        description: "Target service folder (e.g., backend/product, frontend)"
         required: true
         type: string
       language:
@@ -23,14 +23,24 @@ jobs:
       # Checkout the repository
       - uses: actions/checkout@v4
 
-      # Setup environment for Python or Node.js based on the input
-      - name: Setup environment for Python
+      # Setup Python environment and cache pip
+      - name: Setup Python
         if: ${{ inputs.language == 'python' }}
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
-      - name: Setup environment for Node.js
+      - name: Cache pip
+        if: ${{ inputs.language == 'python' }}
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles(format('{0}/**/requirements.txt', inputs.service)) }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      # Setup Node.js environment and cache npm
+      - name: Setup Node.js
         if: ${{ inputs.language == 'node' }}
         uses: actions/setup-node@v4
         with:
@@ -41,7 +51,7 @@ jobs:
       - name: Install & Test (Python)
         if: ${{ inputs.language == 'python' }}
         run: |
-          pip install --upgrade pip
+          python -m pip install --upgrade pip
           pip install -r ${{ inputs.service }}/requirements.txt
           pip install pytest bandit
           pytest ${{ inputs.service }}/tests --maxfail=1 -q
@@ -64,7 +74,20 @@ jobs:
           docker build -t $IMAGE ./${{ inputs.service }}
           echo "IMAGE=$IMAGE" >> $GITHUB_ENV
 
-      # Upload artifact (evidence for report)
+      # Login to Azure Container Registry
+      - name: Login to Azure Container Registry
+        uses: azure/docker-login@v1
+        with:
+          login-server: ${{ secrets.AZURE_CONTAINER_REGISTRY }}
+          username: ${{ secrets.AZURE_CONTAINER_REGISTRY_USERNAME }}
+          password: ${{ secrets.AZURE_CONTAINER_REGISTRY_PASSWORD }}
+
+      # Push Docker image to ACR
+      - name: Push Docker image
+        run: |
+          docker push $IMAGE
+
+      # Upload artifact (for report or debugging)
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
