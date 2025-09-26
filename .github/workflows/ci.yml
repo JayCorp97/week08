@@ -20,10 +20,8 @@ jobs:
       cancel-in-progress: true
 
     steps:
-      # Checkout the repository
       - uses: actions/checkout@v4
 
-      # Setup Python environment and cache pip
       - name: Setup Python
         if: ${{ inputs.language == 'python' }}
         uses: actions/setup-python@v5
@@ -39,7 +37,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pip-
 
-      # Setup Node.js environment and cache npm
       - name: Setup Node.js
         if: ${{ inputs.language == 'node' }}
         uses: actions/setup-node@v4
@@ -47,7 +44,6 @@ jobs:
           node-version: 18
           cache: 'npm'
 
-      # Install dependencies and run tests for Python
       - name: Install & Test (Python)
         if: ${{ inputs.language == 'python' }}
         run: |
@@ -57,24 +53,21 @@ jobs:
           pytest ${{ inputs.service }}/tests --maxfail=1 -q
           bandit -r ${{ inputs.service }}
 
-      # Install dependencies and run tests for Node.js
       - name: Install & Test (Node.js)
         if: ${{ inputs.language == 'node' }}
-        working-directory: ${{ inputs.service }}
         run: |
           npm install
           npm run lint --if-present
           npm test --if-present
           npm audit --production
+        working-directory: ${{ inputs.service == 'frontend' && '' || inputs.service }}
 
-      # Build Docker image
       - name: Build Docker image
         run: |
           IMAGE=${{ secrets.AZURE_CONTAINER_REGISTRY }}/${{ inputs.service }}:${{ github.sha }}
           docker build -t $IMAGE ./${{ inputs.service }}
           echo "IMAGE=$IMAGE" >> $GITHUB_ENV
 
-      # Login to Azure Container Registry
       - name: Login to Azure Container Registry
         uses: azure/docker-login@v1
         with:
@@ -82,12 +75,10 @@ jobs:
           username: ${{ secrets.AZURE_CONTAINER_REGISTRY_USERNAME }}
           password: ${{ secrets.AZURE_CONTAINER_REGISTRY_PASSWORD }}
 
-      # Push Docker image to ACR
       - name: Push Docker image
         run: |
           docker push $IMAGE
 
-      # Upload artifact (for report or debugging)
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
