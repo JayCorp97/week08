@@ -1,0 +1,70 @@
+name: Reusable CI
+
+on:
+  workflow_call:
+    inputs:
+      service:
+        description: "Target service (backend/product, backend/order, frontend)"
+        required: true
+        type: string
+      language:
+        description: "Language/runtime (python/node)"
+        required: true
+        type: string
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: ci-${{ inputs.service }}-${{ github.ref }}
+      cancel-in-progress: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Setup language
+      - name: Setup environment
+        if: ${{ inputs.language == 'python' }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Setup Node.js
+        if: ${{ inputs.language == 'node' }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: 'npm'
+
+      # Install dependencies & run tests
+      - name: Install & Test (Python)
+        if: ${{ inputs.language == 'python' }}
+        run: |
+          pip install --upgrade pip
+          pip install -r ${{ inputs.service }}/requirements.txt
+          pip install pytest bandit
+          pytest ${{ inputs.service }}/tests --maxfail=1 -q
+          bandit -r ${{ inputs.service }}
+
+      - name: Install & Test (Node.js)
+        if: ${{ inputs.language == 'node' }}
+        working-directory: ${{ inputs.service }}
+        run: |
+          npm ci
+          npm run lint --if-present
+          npm test --if-present
+          npm audit --production
+
+      # Build Docker image
+      - name: Build Docker image
+        run: |
+          IMAGE=${{ secrets.AZURE_CONTAINER_REGISTRY }}/${{ inputs.service }}:${{ github.sha }}
+          docker build -t $IMAGE ${{ inputs.service }}
+          echo "IMAGE=$IMAGE" >> $GITHUB_ENV
+
+      # Upload artifact (evidence for report)
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.service }}-artifact
+          path: ${{ inputs.service }}
